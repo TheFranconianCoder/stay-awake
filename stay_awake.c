@@ -153,7 +153,7 @@ HICON CreateDynamicIcon(const int idle, const AppMode mode) {
     SelectObject(memDC, GetStockObject(NULL_BRUSH));
     RoundRect(memDC, xLeft, yTop, xRight + 1, yBottom + 1, 3, 3);
 
-    MoveToEx(memDC, centerX - 3, yBottom + 3, NULL);
+    MoveToEx(memDC, centerX - 4, yBottom + 3, NULL);
     LineTo(memDC, centerX + 4, yBottom + 3);
 
     SelectObject(memDC, oldPen);
@@ -184,9 +184,9 @@ HICON CreateDynamicIcon(const int idle, const AppMode mode) {
     SelectObject(maskDC, GetStockObject(BLACK_BRUSH));
     RoundRect(maskDC, xLeft, yTop, xRight + 1, yBottom + 1, 3, 3);
 
-    RECT neckMask = {centerX - 1, yBottom + 1, centerX + 1, yBottom + 2};
+    const RECT neckMask = {centerX - 1, yBottom + 1, centerX + 1, yBottom + 2};
     FillRect(maskDC, &neckMask, GetStockObject(BLACK_BRUSH));
-    const RECT baseMask = {centerX - 3, yBottom + 3, centerX + 4, yBottom + 4};
+    const RECT baseMask = {centerX - 4, yBottom + 3, centerX + 4, yBottom + 4};
     FillRect(maskDC, &baseMask, GetStockObject(BLACK_BRUSH));
 
     SelectObject(maskDC, hOldMask);
