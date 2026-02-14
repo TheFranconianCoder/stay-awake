@@ -1,0 +1,40 @@
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  misc-*,
+  -misc-include-cleaner,
+  readability-*,
+  readability-else-after-return,
+  readability-simplify-boolean-expr,
+  readability-isolate-declaration,
+  modernize-use-using,
+  -readability-braces-around-statements,
+  -readability-magic-numbers,
+  portability-*,
+  performance-*,
+  concurrency-*,
+  bugprone-sizeof-expression,
+  bugprone-suspicious-missing-comma,
+  misc-static-assert,
+  readability-identifier-naming
+
+WarningsAsErrors: 'bugprone-*,clang-analyzer-*'
+
+CheckOptions:
+  - key:             readability-identifier-naming.GlobalVariablePrefix
+    value:           'g_'
+  - key:             readability-identifier-naming.GlobalVariableCase
+    value:           'camelCase'
+  - key:             readability-identifier-naming.EnumConstantCase
+    value:           'UPPER_CASE'
+  - key:             readability-identifier-naming.FunctionCase
+    value:           'PascalCase'
+  - key:             readability-identifier-naming.TypedefCase
+    value:           'PascalCase'
+  - key:             readability-identifier-naming.ParameterCase
+    value:           'camelCase'
+  - key:             readability-identifier-naming.LocalVariableCase
+    value:           'camelCase'
+  - key:             bugprone-argument-comment.StrictMode
+    value:           '1'

@@ -1,0 +1,48 @@
+# .gitignore file created for free with Tower (https://www.git-tower.com/)
+# For suggestions or improvements please contact us using support@git-tower.com
+# Generated on 2026-02-14
+# Includes: zig, clion
+
+### Universal ###
+# Common files that should be ignored in all projects
+
+# Logs
+*.log
+# Temporary files
+*.tmp
+*~
+
+*.bak
+# Environment files (containing secrets, API keys, credentials)
+.env
+*.env
+.env.*
+
+# Local configuration that shouldn't be shared
+*.local
+
+### Zig ###
+# zig specific files
+
+.zig-cache/
+zig-out/
+
+### Clion ###
+# clion editor specific files
+
+# CLion
+.idea/
+*.iws
+*.iml
+*.ipr
+
+cmake-build-*/
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/dictionaries
+.idea/misc.xml
+
+.idea/modules.xml
+.idea/vcs.xml
+.idea/deployment.xml
+.idea/remote-targets.xml
