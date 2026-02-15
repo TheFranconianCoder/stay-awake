@@ -14,7 +14,10 @@ enum {
     DEFAULT_IDLE_LIMIT = 300,
     BIT_DEPTH_32 = 32,
     MS_PER_SEC = 1000,
-    RESTART_DELAY_MS = 500
+    RESTART_DELAY_MS = 500,
+    APP_VERSION_MAJOR = 1,
+    APP_VERSION_MINOR = 1,
+    APP_VERSION_PATCH = 0
 };
 
 #define WM_TRAYICON (WM_USER + 1)
@@ -85,11 +88,15 @@ void LoadConfig() {
 
 void UpdateTooltip() {
     wchar_t tooltip[128];
+    
     if (g_mode == MODE_STAY_AWAKE) {
-        wcscpy_s(tooltip, 128, L"StayAwake: Always on");
+        swprintf_s(tooltip, 128, L"StayAwake v%d.%d.%d: Always on", 
+                   APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH);
     } else {
-        swprintf_s(tooltip, 128, L"StayAwake: Auto-off (%d sec)", g_idleLimit);
+        swprintf_s(tooltip, 128, L"StayAwake v%d.%d.%d: Auto-off (%d sec)", 
+                   APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH, g_idleLimit);
     }
+    
     wcscpy_s(g_notifyData.szTip, 128, tooltip);
     g_notifyData.uFlags |= NIF_TIP;
     Shell_NotifyIconW(NIM_MODIFY, &g_notifyData);
@@ -223,19 +230,25 @@ void ApplyPowerState() {
         SetTimer(g_notifyData.hWnd, ID_TIMER_TICK, MS_PER_SEC, NULL);
     } else {
         KillTimer(g_notifyData.hWnd, ID_TIMER_TICK);
-        g_monitorIsOff = FALSE;
     }
+
+    g_monitorIsOff = FALSE;
 }
 
 LRESULT CALLBACK WndProc(HWND hwnd, const UINT msg, const WPARAM wParam, const LPARAM lParam) { // NOLINT(*-function-cognitive-complexity)
     switch (msg) {
     case WM_TRAYICON:
         if (lParam == WM_LBUTTONUP) {
-            g_mode = g_mode == MODE_STAY_AWAKE ? MODE_AUTO_OFF : MODE_STAY_AWAKE;
-            ApplyPowerState();
-            SaveConfig();
-            UpdateTray(0);
-            UpdateTooltip();
+            if (GetKeyState(VK_SHIFT) & 0x8000) {
+                SendMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2);
+                g_monitorIsOff = TRUE;
+            } else {
+                g_mode = g_mode == MODE_STAY_AWAKE ? MODE_AUTO_OFF : MODE_STAY_AWAKE;
+                ApplyPowerState();
+                SaveConfig();
+                UpdateTray(0);
+                UpdateTooltip();
+            }
         } else if (lParam == WM_RBUTTONUP) {
             POINT mousePt;
             GetCursorPos(&mousePt);
@@ -390,14 +403,14 @@ int main() { // NOLINT(*-function-cognitive-complexity)
 
     while (TRUE) {
         HANDLE waitHandles[2];
-        DWORD handleCount = 0;
-    
+        DWORD  handleCount = 0;
+
         if (hNotify) {
             waitHandles[handleCount++] = hNotify;
         }
-    
+
         DWORD dwWait = MsgWaitForMultipleObjects(handleCount, waitHandles, FALSE, INFINITE, QS_ALLINPUT);
-    
+
         if (dwWait == WAIT_OBJECT_0 && handleCount > 0) {
             DWORD64 now = GetTickCount64();
             if (now - g_lastConfigLoad > 100) {
@@ -408,7 +421,7 @@ int main() { // NOLINT(*-function-cognitive-complexity)
             }
             FindNextChangeNotification(hNotify);
         }
-    
+
         while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE)) {
             if (msg.message == WM_QUIT) goto cleanup;
             TranslateMessage(&msg);

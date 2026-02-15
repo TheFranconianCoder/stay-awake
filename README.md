@@ -19,6 +19,14 @@ The application features two distinct modes, toggled by a **left-click** on the 
 
 In **Auto-Off** mode, the application monitors user activity via `GetLastInputInfo`. Once the idle time exceeds the configured limit, it broadcasts a `SC_MONITORPOWER` command to power down the displays.
 
+### ⚡ Quick Actions
+
+StayAwake supports rapid interaction through modifier keys:
+
+| Action | Interaction | Functionality |
+| --- | --- | --- |
+| **Instant Off** | **Shift + Left-Click** | Immediately powers down all monitors without changing the current operating mode. |
+
 ---
 
 ## 📊 Visual Feedback (Tray Icon)
