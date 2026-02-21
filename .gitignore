@@ -46,3 +46,5 @@ cmake-build-*/
 .idea/vcs.xml
 .idea/deployment.xml
 .idea/remote-targets.xml
+
+/node_modules/

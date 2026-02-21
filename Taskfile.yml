@@ -1,0 +1,34 @@
+version: "3"
+
+tasks:
+  run:
+    desc: Run local dev build
+    cmds:
+      - mise x -- zig build
+      - cmd /c start "" "./zig-out/bin/StayAwake-windows-x86_64.exe"
+
+  release:
+    desc: "Create new release and publish on GitHub (Usage: task release VERSION=1.2.0)"
+    summary: |
+      Prepares the release by updating version headers, builds the binary, and publishes it to GitHub.
+      Requirements: Bun, Zig, and GitHub CLI (gh) must be installed.
+    cmds:
+      # 1. Update version strings
+      - mise x -- bun ./scripts/prepare-release.ts {{.VERSION}}
+      
+      # 2. Automated Git Workflow
+      - git add src/app_state.h resource.rc
+      - 'git commit -m "chore: prepare release v{{.VERSION}}"'
+      - git push
+      - echo "✅ Changes committed and pushed to origin."
+      
+      # 3. Build and publish
+      - mise x -- zig build
+      - mise x -- gh release create v{{.VERSION}} ./zig-out/bin/StayAwake-windows-x86_64.exe --generate-notes
+    preconditions:
+      - sh: 'test -n "{{.VERSION}}"'
+        msg: "Error: VERSION variable is missing. Example: task release VERSION=1.2.0"
+      - sh: "mise x -- gh auth status"
+        msg: "Error: You must be logged into the GitHub CLI (gh auth login)."
+      - sh: "git diff --exit-code"
+        msg: "Error: You have uncommitted changes. Please stash or commit them first."
