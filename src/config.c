@@ -32,13 +32,13 @@ void saveConfig(void) {
     if (_wfopen_s(&configFile, tempPath, L"w") == 0 && configFile) {
         FILE* const SAFE_CONFIG_FILE = configFile;
 
-        fwprintf(SAFE_CONFIG_FILE, L"%d %d", (int)mode, idleLimit);
+        fwprintf(SAFE_CONFIG_FILE, L"%d %d", (int)globalMode, idleLimit);
         fclose(SAFE_CONFIG_FILE);
 
         if (!MoveFileW(tempPath, configPath)) {
             FILE* directFile = NULL;
             if (_wfopen_s(&directFile, configPath, L"w") == 0 && directFile) {
-                fwprintf(directFile, L"%d %d", (int)mode, idleLimit);
+                fwprintf(directFile, L"%d %d", (int)globalMode, idleLimit);
                 fclose(directFile);
             }
             DeleteFileW(tempPath);
@@ -57,7 +57,7 @@ void loadConfig(void) {
                 idleLimit = tempLimit;
             }
             if (tempMode >= 0 && tempMode < MODE_COUNT) {
-                mode = (AppMode)tempMode;
+                globalMode = (AppMode)tempMode;
             }
         }
         fclose(configFile);

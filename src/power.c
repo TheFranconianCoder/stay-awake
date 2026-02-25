@@ -7,9 +7,10 @@
 // ---------------------------------------------------------------------------
 
 void applyPowerState(void) {
-    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | (mode == MODE_STAY_AWAKE ? ES_DISPLAY_REQUIRED : 0));
+    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
+                            (globalMode == MODE_STAY_AWAKE ? ES_DISPLAY_REQUIRED : 0));
 
-    if (mode == MODE_AUTO_OFF) {
+    if (globalMode == MODE_AUTO_OFF) {
         SetTimer(notifyData.hWnd, ID_TIMER_TICK, MS_PER_SEC, NULL);
     } else {
         KillTimer(notifyData.hWnd, ID_TIMER_TICK);
@@ -32,7 +33,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, const UINT msg, const WPARAM wParam,
                 SendMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2);
                 monitorIsOff = TRUE;
             } else {
-                mode = mode == MODE_STAY_AWAKE ? MODE_AUTO_OFF : MODE_STAY_AWAKE;
+                globalMode = globalMode == MODE_STAY_AWAKE ? MODE_AUTO_OFF : MODE_STAY_AWAKE;
                 applyPowerState();
                 saveConfig();
                 updateTray(0);
@@ -64,7 +65,7 @@ LRESULT CALLBACK wndProc(HWND hwnd, const UINT msg, const WPARAM wParam,
                 DWORD64 currentTicks = GetTickCount64();
                 if (currentTicks >= inputInfo.dwTime) {
                     const int IDLE = (int)((currentTicks - inputInfo.dwTime) / MS_PER_SEC);
-                    if (IDLE >= 0 && mode == MODE_AUTO_OFF) {
+                    if (IDLE >= 0 && globalMode == MODE_AUTO_OFF) {
                         updateTray(IDLE);
                         if (IDLE >= idleLimit && !monitorIsOff) {
                             SendMessageW(HWND_BROADCAST, WM_SYSCOMMAND, SC_MONITORPOWER, 2);

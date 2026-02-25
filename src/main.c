@@ -8,7 +8,7 @@
 // ---------------------------------------------------------------------------
 
 int             idleLimit    = DEFAULT_IDLE_LIMIT;
-AppMode         mode         = MODE_STAY_AWAKE;
+AppMode         globalMode   = MODE_STAY_AWAKE;
 BOOL            monitorIsOff = FALSE;
 NOTIFYICONDATAW notifyData   = {0};
 wchar_t         configPath[MAX_PATH];
@@ -79,7 +79,7 @@ int main(void) { // NOLINT(*-function-cognitive-complexity)
     notifyData.uID              = ID_TRAY_ICON;
     notifyData.uFlags           = NIF_ICON | NIF_MESSAGE | NIF_TIP;
     notifyData.uCallbackMessage = WM_TRAYICON;
-    notifyData.hIcon            = createDynamicIcon(0, mode);
+    notifyData.hIcon            = createDynamicIcon(0, globalMode);
     wcscpy_s(notifyData.szTip, 128, L"StayAwake");
 
     if (!Shell_NotifyIconW(NIM_ADD, &notifyData)) {

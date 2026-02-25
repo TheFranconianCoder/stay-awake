@@ -39,7 +39,7 @@ typedef enum { MODE_STAY_AWAKE = 0, MODE_AUTO_OFF, MODE_COUNT } AppMode;
 // ---------------------------------------------------------------------------
 
 extern int             idleLimit;
-extern AppMode         mode;
+extern AppMode         globalMode;
 extern BOOL            monitorIsOff;
 extern NOTIFYICONDATAW notifyData;
 extern wchar_t         configPath[MAX_PATH];

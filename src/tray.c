@@ -3,9 +3,9 @@
 #include <string.h>
 
 // Colors used exclusively for icon rendering
-static constexpr COLORREF S_COL_RED  = RGB(231, 76, 60);
-static constexpr COLORREF S_COL_BLUE = RGB(52, 152, 219);
-static constexpr COLORREF S_COL_DARK = RGB(45, 45, 45);
+static const COLORREF S_COL_RED  = RGB(231, 76, 60);
+static const COLORREF S_COL_BLUE = RGB(52, 152, 219);
+static const COLORREF S_COL_DARK = RGB(45, 45, 45);
 
 // ---------------------------------------------------------------------------
 // Icon drawing
@@ -144,7 +144,7 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
 
 void updateTray(const int idle) {
     // ReSharper disable once CppLocalVariableMayBeConst
-    HICON hNew = createDynamicIcon(idle, mode);
+    HICON hNew = createDynamicIcon(idle, globalMode);
     if (hNew) {
         // ReSharper disable once CppLocalVariableMayBeConst
         HICON hOld       = notifyData.hIcon;
@@ -161,7 +161,7 @@ void updateTray(const int idle) {
 void updateTooltip(void) {
     wchar_t tooltip[128];
 
-    if (mode == MODE_STAY_AWAKE) {
+    if (globalMode == MODE_STAY_AWAKE) {
         swprintf_s(tooltip, 128, L"StayAwake v%d.%d.%d: Always on", APP_VERSION_MAJOR, APP_VERSION_MINOR,
                    APP_VERSION_PATCH);
     } else {
