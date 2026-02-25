@@ -50,3 +50,5 @@ cmake-build-*/
 
 /node_modules/
 /.task/
+/release_notes.md
+/release_title.txt
