@@ -44,7 +44,11 @@ tasks:
       
       # 3. Build and publish
       - mise x -- zig build
-      - 'mise x -- gh release create v{{.VERSION}} ./zig-out/bin/StayAwake-windows-x86_64.exe -title "v{{.VERSION}}: $(cat release_title.txt)" --notes-file release_notes.md'
+      - |
+        mise x -- gh release create "v{{.VERSION}}" \
+          ./zig-out/bin/StayAwake-windows-x86_64.exe \
+          --title "v{{.VERSION}}: $(cat release_title.txt)" \
+          --notes-file release_notes.md      
       - rm release_title.txt release_notes.md
       - echo "🚀 Release v{{.VERSION}} successfully published!"
     preconditions:
