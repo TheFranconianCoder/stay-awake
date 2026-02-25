@@ -1,6 +1,6 @@
 #pragma once
 
-void InitConfigPath(void);
-void LoadConfig(void);
-void SaveConfig(void);
-void UpdateAutostartIfNeeded(void);
+void initConfigPath(void);
+void loadConfig(void);
+void saveConfig(void);
+void updateAutostartIfNeeded(void);

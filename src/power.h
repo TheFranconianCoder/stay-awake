@@ -2,5 +2,5 @@
 
 #include "app_state.h"
 
-void            ApplyPowerState(void);
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void             applyPowerState(void);
+LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);

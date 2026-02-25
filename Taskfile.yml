@@ -1,11 +1,31 @@
 version: "3"
 
 tasks:
-  run:
-    desc: Run local dev build
+  
+  check:
     cmds:
-      - mise x -- zig build
-      - cmd /c start "" "./zig-out/bin/StayAwake-windows-x86_64.exe"
+      - task: build-flags
+      - mise x -- clang-format -i src/*.[ch]
+      - mise x -- clang-tidy src/*.[ch]
+    sources:
+      - src/*
+        
+  build:
+    desc: Build StayAwake
+    deps: [ check ]
+    cmd: mise x -- zig build
+    sources:
+      - src/*
+    generates:
+      - ./zig-out/bin/StayAwake-windows-x86_64.exe
+      
+  run:
+    desc: Run StayAwake
+    deps: [ build ]
+    cmd: cmd /c start "" "./zig-out/bin/StayAwake-windows-x86_64.exe"
+    
+  build-flags:
+    cmd: mise x -- zig build compile-flags
 
   release:
     desc: "Create new release and publish on GitHub (Usage: task release VERSION=1.2.0)"

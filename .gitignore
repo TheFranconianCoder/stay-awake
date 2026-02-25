@@ -36,6 +36,7 @@ zig-out/
 *.iml
 *.ipr
 
+cmake-build/
 cmake-build-*/
 .idea/workspace.xml
 .idea/tasks.xml
@@ -48,3 +49,4 @@ cmake-build-*/
 .idea/remote-targets.xml
 
 /node_modules/
+/.task/

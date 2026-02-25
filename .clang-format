@@ -1,16 +1,40 @@
+Language: C
 BasedOnStyle: LLVM
+Standard: Latest
+
 IndentWidth: 4
 UseTab: Never
 ColumnLimit: 120
 
-AlignConsecutiveAssignments: true
-AlignConsecutiveDeclarations: true
-
 BreakBeforeBraces: Attach
+DerivePointerAlignment: false
+PointerAlignment: Left
+SpaceAroundPointerQualifiers: After
+QualifierAlignment: Left
 
-AllowShortIfStatementsOnASingleLine: true
-AllowShortFunctionsOnASingleLine: All
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+InsertBraces: true
 
-PointerAlignment: Right
+AlignConsecutiveAssignments:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
 
-SortIncludes: true
+AlignConsecutiveDeclarations:
+  Enabled: true
+  AcrossEmptyLines: false
+  AcrossComments: false
+
+SpaceAfterCStyleCast: false
+AlignArrayOfStructures: Left
+AlignAfterOpenBracket: Align
+AllowAllParametersOfDeclarationOnNextLine: false
+
+SortIncludes: CaseSensitive
+
+IntegerLiteralSeparator:
+  Decimal: 3
+  Binary: 4
+  Hex: 2

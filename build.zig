@@ -1,4 +1,5 @@
 const std = @import("std");
+const compile_flagz = @import("compile_flagz");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
@@ -20,8 +21,6 @@ pub fn build(b: *std.Build) void {
         exe.want_lto = true;
     }
 
-    const c_flags = &.{ "-std=c11", "-DUNICODE", "-D_UNICODE" };
-
     exe.addCSourceFiles(.{
         .files = &.{
             "src/main.c",
@@ -29,7 +28,14 @@ pub fn build(b: *std.Build) void {
             "src/tray.c",
             "src/power.c",
         },
-        .flags = c_flags,
+        .flags = &.{
+            "-O2",
+            "-std=c23",
+            "-Wall",
+            "-Wextra",
+            "-DUNICODE",
+            "-D_UNICODE",
+        },
     });
 
     exe.addIncludePath(b.path("src"));
@@ -52,4 +58,10 @@ pub fn build(b: *std.Build) void {
 
     exe.subsystem = .Windows;
     b.installArtifact(exe);
+
+    var cflags = compile_flagz.addCompileFlags(b);
+    cflags.addIncludePath(b.path("src"));
+
+    const cflags_step = b.step("compile-flags", "Generate compile_flags.txt for C/C++ IDE support");
+    cflags_step.dependOn(&cflags.step);
 }

@@ -2,3 +2,5 @@
 zig = "latest"
 bun = "latest"
 github-cli = "latest"
+cmake = "latest"
+ninja = "latest"

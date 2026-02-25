@@ -2,6 +2,6 @@
 
 #include "app_state.h"
 
-HICON CreateDynamicIcon(int idle, AppMode mode);
-void  UpdateTray(int idle);
-void  UpdateTooltip(void);
+HICON createDynamicIcon(int idle, AppMode mode);
+void  updateTray(int idle);
+void  updateTooltip(void);

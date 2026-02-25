@@ -1,0 +1,12 @@
+.{
+    .name = .stay_awake,
+    .version = "0.15.2",
+    .dependencies = .{
+        .compile_flagz = .{
+            .url = "git+https://github.com/deevus/compile_flagz#59bce23aa6ad232655a288852999d94a78edaf7f",
+            .hash = "compile_flagz-2.0.0-dev-SrEtlFgcAAAOYG5s4Fe5BLdoynlL3MW0SS7RilJB5kTc",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x6bac0bbfedb11478,
+}
