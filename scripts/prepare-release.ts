@@ -12,9 +12,9 @@ async function updateVersion() {
     const appStateFile = Bun.file("src/app_state.h");
     let appState = await appStateFile.text();
 
-    appState = appState.replace(/APP_VERSION_MAJOR = \d+/, `APP_VERSION_MAJOR = ${major}`);
-    appState = appState.replace(/APP_VERSION_MINOR = \d+/, `APP_VERSION_MINOR = ${minor}`);
-    appState = appState.replace(/APP_VERSION_PATCH = \d+/, `APP_VERSION_PATCH = ${patch}`);
+    appState = appState.replace(/(APP_VERSION_MAJOR\s+=) \d+/, `$1 ${major}`);
+    appState = appState.replace(/(APP_VERSION_MINOR\s+=) \d+/, `$1 ${minor}`);
+    appState = appState.replace(/(APP_VERSION_PATCH\s+=) \d+/, `$1 ${patch}`);
 
     await Bun.write("src/app_state.h", appState);
     console.log(`✅ Updated app_state.h to v${newVersion}`);
