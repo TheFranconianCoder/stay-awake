@@ -9,6 +9,7 @@ tasks:
       - mise x -- clang-tidy src/*.[ch]
     sources:
       - src/*
+      - .clang-*
         
   build:
     desc: Build StayAwake

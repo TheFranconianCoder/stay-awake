@@ -1,8 +1,10 @@
 #include "config.h"
-#include "app_state.h"
 
 #include <shlobj.h>
+
 #include <stdio.h>
+
+#include "app_state.h"
 
 // ---------------------------------------------------------------------------
 // Config path
