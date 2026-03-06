@@ -90,6 +90,26 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
     SelectObject(memDC, oldPen);
     DeleteObject(hWhitePen);
 
+    const ptrdiff_t STRIDE = (ptrdiff_t)SIZE * 4;
+    for (int idx = 0; idx < SIZE * SIZE; idx++) {
+        BYTE* pixel = bits + ((ptrdiff_t)idx * 4);
+        if (pixel[3] == 0 && (pixel[0] | pixel[1] | pixel[2])) {
+            pixel[3] = 255;
+        }
+    }
+    BYTE* corners[4] = {
+        bits + ((ptrdiff_t)(SIZE - 1 - Y_TOP) * STRIDE) + ((ptrdiff_t)X_LEFT * 4),
+        bits + ((ptrdiff_t)(SIZE - 1 - Y_TOP) * STRIDE) + ((ptrdiff_t)X_RIGHT * 4),
+        bits + ((ptrdiff_t)(SIZE - 1 - Y_BOTTOM) * STRIDE) + ((ptrdiff_t)X_LEFT * 4),
+        bits + ((ptrdiff_t)(SIZE - 1 - Y_BOTTOM) * STRIDE) + ((ptrdiff_t)X_RIGHT * 4),
+    };
+    for (int idx = 0; idx < 4; idx++) {
+        corners[idx][0] = 255; // B
+        corners[idx][1] = 255; // G
+        corners[idx][2] = 255; // R
+        corners[idx][3] = 128; // A
+    }
+
     // Mask bitmap
     // ReSharper disable once CppLocalVariableMayBeConst
     HBITMAP hMaskBmp = CreateBitmap(SIZE, SIZE, 1, 1, NULL);
