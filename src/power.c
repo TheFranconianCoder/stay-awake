@@ -7,6 +7,8 @@
 // Power state
 // ---------------------------------------------------------------------------
 
+static BOOL monitorIsOff = FALSE;
+
 void applyPowerState(void) {
     SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED |
                             (globalMode == MODE_STAY_AWAKE ? ES_DISPLAY_REQUIRED : 0));
@@ -38,7 +40,6 @@ LRESULT CALLBACK wndProc(HWND hwnd, const UINT msg, const WPARAM wParam,
                 applyPowerState();
                 saveConfig();
                 updateTray(0);
-                updateTooltip();
             }
         } else if (lParam == WM_RBUTTONUP) {
             POINT mousePt;

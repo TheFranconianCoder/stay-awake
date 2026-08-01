@@ -15,17 +15,18 @@ static const COLORREF S_COL_DARK = RGB(45, 45, 45);
 HICON createDynamicIcon(const int idle, const AppMode mode) {
     const int SIZE = GetSystemMetrics(SM_CXSMICON);
 
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HDC hdcScreen = GetDC(NULL);
-    if (!hdcScreen) {
-        return NULL;
-    }
+    HICON   hIcon     = NULL;
+    HBITMAP hColorBmp = NULL;
+    HBITMAP hMaskBmp  = NULL;
+    HDC     memDC     = NULL;
+    HDC     maskDC    = NULL;
+    HGDIOBJ hOldBmp   = NULL;
+    HGDIOBJ hOldMask  = NULL;
+    void*   bits      = NULL;
 
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HDC memDC = CreateCompatibleDC(hdcScreen);
+    memDC = CreateCompatibleDC(NULL);
     if (!memDC) {
-        ReleaseDC(NULL, hdcScreen);
-        return NULL;
+        goto cleanup;
     }
 
     BITMAPINFO bmi              = {0};
@@ -36,17 +37,12 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
     bmi.bmiHeader.biBitCount    = BIT_DEPTH_32;
     bmi.bmiHeader.biCompression = BI_RGB;
 
-    void* bits = NULL;
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HBITMAP hColorBmp = CreateDIBSection(hdcScreen, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
+    hColorBmp = CreateDIBSection(memDC, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
     if (!hColorBmp) {
-        DeleteDC(memDC);
-        ReleaseDC(NULL, hdcScreen);
-        return NULL;
+        goto cleanup;
     }
 
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HBITMAP hOldBmp = SelectObject(memDC, hColorBmp);
+    hOldBmp = SelectObject(memDC, hColorBmp);
     ZeroMemory(bits, (size_t)SIZE * SIZE * 4);
 
     const int X_LEFT   = 1;
@@ -90,14 +86,21 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
     SelectObject(memDC, oldPen);
     DeleteObject(hWhitePen);
 
-    const ptrdiff_t STRIDE = (ptrdiff_t)SIZE * 4;
+    // Fix alpha: GDI leaves alpha=0 on drawn pixels. Scan the full buffer
+    // because pixels are written in multiple non-contiguous regions
+    // (fill, outline, base line).
     for (int idx = 0; idx < SIZE * SIZE; idx++) {
         BYTE* pixel = bits + ((ptrdiff_t)idx * 4);
         if (pixel[3] == 0 && (pixel[0] | pixel[1] | pixel[2])) {
             pixel[3] = 255;
         }
     }
-    BYTE* corners[4] = {
+
+    // Semi-transparent corners at the outline vertices.
+    // Coordinates depend on X_LEFT, Y_TOP, X_RIGHT, Y_BOTTOM above –
+    // keep in sync if the monitor silhouette geometry changes.
+    const ptrdiff_t STRIDE     = (ptrdiff_t)SIZE * 4;
+    BYTE*           corners[4] = {
         bits + ((ptrdiff_t)(SIZE - 1 - Y_TOP) * STRIDE) + ((ptrdiff_t)X_LEFT * 4),
         bits + ((ptrdiff_t)(SIZE - 1 - Y_TOP) * STRIDE) + ((ptrdiff_t)X_RIGHT * 4),
         bits + ((ptrdiff_t)(SIZE - 1 - Y_BOTTOM) * STRIDE) + ((ptrdiff_t)X_LEFT * 4),
@@ -111,29 +114,17 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
     }
 
     // Mask bitmap
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HBITMAP hMaskBmp = CreateBitmap(SIZE, SIZE, 1, 1, NULL);
+    hMaskBmp = CreateBitmap(SIZE, SIZE, 1, 1, NULL);
     if (!hMaskBmp) {
-        SelectObject(memDC, hOldBmp);
-        DeleteObject(hColorBmp);
-        DeleteDC(memDC);
-        ReleaseDC(NULL, hdcScreen);
-        return NULL;
+        goto cleanup;
     }
 
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HDC maskDC = CreateCompatibleDC(hdcScreen);
+    maskDC = CreateCompatibleDC(NULL);
     if (!maskDC) {
-        DeleteObject(hMaskBmp);
-        SelectObject(memDC, hOldBmp);
-        DeleteObject(hColorBmp);
-        DeleteDC(memDC);
-        ReleaseDC(NULL, hdcScreen);
-        return NULL;
+        goto cleanup;
     }
 
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HBITMAP hOldMask = SelectObject(maskDC, hMaskBmp);
+    hOldMask = SelectObject(maskDC, hMaskBmp);
     PatBlt(maskDC, 0, 0, SIZE, SIZE, WHITENESS);
     SelectObject(maskDC, GetStockObject(BLACK_BRUSH));
     RoundRect(maskDC, X_LEFT, Y_TOP, X_RIGHT + 1, Y_BOTTOM + 1, 3, 3);
@@ -143,18 +134,28 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
     const RECT BASE_MASK = {CENTER_X - 4, Y_BOTTOM + 3, CENTER_X + 4, Y_BOTTOM + 4};
     FillRect(maskDC, &BASE_MASK, GetStockObject(BLACK_BRUSH));
 
-    SelectObject(maskDC, hOldMask);
-
     ICONINFO iconInfo = {TRUE, 0, 0, hMaskBmp, hColorBmp};
-    // ReSharper disable once CppLocalVariableMayBeConst
-    HICON hIcon = CreateIconIndirect(&iconInfo);
+    hIcon             = CreateIconIndirect(&iconInfo);
 
-    SelectObject(memDC, hOldBmp);
-    DeleteObject(hColorBmp);
-    DeleteObject(hMaskBmp);
-    DeleteDC(memDC);
-    DeleteDC(maskDC);
-    ReleaseDC(NULL, hdcScreen);
+cleanup:
+    if (memDC) {
+        if (hOldBmp) {
+            SelectObject(memDC, hOldBmp);
+        }
+        DeleteDC(memDC);
+    }
+    if (maskDC) {
+        if (hOldMask) {
+            SelectObject(maskDC, hOldMask);
+        }
+        DeleteDC(maskDC);
+    }
+    if (hColorBmp) {
+        DeleteObject(hColorBmp);
+    }
+    if (hMaskBmp) {
+        DeleteObject(hMaskBmp);
+    }
 
     return hIcon;
 }
@@ -164,6 +165,28 @@ HICON createDynamicIcon(const int idle, const AppMode mode) {
 // ---------------------------------------------------------------------------
 
 void updateTray(const int idle) {
+    static int     lastVisualFill = -1;
+    static AppMode lastVisualMode = MODE_COUNT;
+
+    const BOOL IS_AUTO_OFF_TICK = (idle > 0 && globalMode == MODE_AUTO_OFF);
+
+    if (IS_AUTO_OFF_TICK) {
+        const int SIZE   = GetSystemMetrics(SM_CXSMICON);
+        const int HEIGHT = SIZE - 7; // fill area: (SIZE-5) - (1+1)
+        int       fill   = idle * HEIGHT / idleLimit;
+        if (fill > HEIGHT) {
+            fill = HEIGHT;
+        }
+        if (fill == lastVisualFill && globalMode == lastVisualMode) {
+            return;
+        }
+        lastVisualFill = fill;
+        lastVisualMode = globalMode;
+    } else {
+        lastVisualFill = -1;
+        lastVisualMode = globalMode;
+    }
+
     // ReSharper disable once CppLocalVariableMayBeConst
     HICON hNew = createDynamicIcon(idle, globalMode);
     if (hNew) {

@@ -5,7 +5,7 @@
 | `task check` | Format + lint (clang-format, clang-tidy) |
 | `task build` | Check + compile (zig build, ReleaseSmall) |
 | `task run` | Build + launch binary |
-| `task release VERSION=x.y.z` | Tag, build, publish to GitHub |
+| `task release VERSION=x.y.z` | Generate notes, tag, build, publish to GitHub |
 
 # Conventions
 
@@ -14,8 +14,7 @@
 - **Format:** LLVM style, 4-space indent, 120 col, Attach braces, left-aligned pointers
 - **Lint:** clang-tidy with warnings-as-errors
 - **Build:** Zig (build.zig); CMakeLists.txt for IDE analysis only
-- **Scripts:** Bun/TypeScript (`scripts/`)
-- **Tools:** mise manages zig, bun, gh, cmake, ninja
+- **Tools:** mise manages zig, gh, cmake, ninja
 
 # Stack
 

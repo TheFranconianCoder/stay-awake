@@ -7,10 +7,9 @@
 // Global definitions  (declared extern in app_state.h)
 // ---------------------------------------------------------------------------
 
-int             idleLimit    = DEFAULT_IDLE_LIMIT;
-AppMode         globalMode   = MODE_STAY_AWAKE;
-BOOL            monitorIsOff = FALSE;
-NOTIFYICONDATAW notifyData   = {0};
+int             idleLimit  = DEFAULT_IDLE_LIMIT;
+AppMode         globalMode = MODE_STAY_AWAKE;
+NOTIFYICONDATAW notifyData = {0};
 wchar_t         configPath[MAX_PATH];
 wchar_t         configDir[MAX_PATH];
 DWORD64         lastConfigLoad = 0;

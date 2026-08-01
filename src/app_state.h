@@ -23,7 +23,7 @@ enum {
     APP_VERSION_MAJOR         = 1,
     APP_VERSION_MINOR         = 2,
     APP_VERSION_PATCH         = 3,
-    CONFIG_RELOAD_DEBOUNCE_MS = 100
+    CONFIG_RELOAD_DEBOUNCE_MS = 250
 };
 
 #define WM_TRAYICON (WM_USER + 1)
@@ -40,7 +40,6 @@ typedef enum { MODE_STAY_AWAKE = 0, MODE_AUTO_OFF, MODE_COUNT } AppMode;
 
 extern int             idleLimit;
 extern AppMode         globalMode;
-extern BOOL            monitorIsOff;
 extern NOTIFYICONDATAW notifyData;
 extern wchar_t         configPath[MAX_PATH];
 extern wchar_t         configDir[MAX_PATH];
