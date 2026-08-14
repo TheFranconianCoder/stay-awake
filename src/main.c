@@ -7,12 +7,33 @@
 // Global definitions  (declared extern in app_state.h)
 // ---------------------------------------------------------------------------
 
-int             idleLimit  = DEFAULT_IDLE_LIMIT;
-AppMode         globalMode = MODE_STAY_AWAKE;
+int     idleLimit  = DEFAULT_IDLE_LIMIT;
+AppMode globalMode = MODE_STAY_AWAKE;
+
+#ifdef _WIN32
 NOTIFYICONDATAW notifyData = {0};
 wchar_t         configPath[MAX_PATH];
 wchar_t         configDir[MAX_PATH];
 DWORD64         lastConfigLoad = 0;
+#endif
+
+#ifdef __linux__
+char          configPath[512];
+char          configDir[512];
+char          iconDir[512];
+guint64       lastConfigLoad   = 0;
+guint         idlePollSourceId = 0;
+int           inotifyFd        = -1;
+int           inotifyWatchFd   = -1;
+AppIndicator* indicator        = NULL;
+GDBusProxy*   idleProxy        = NULL;
+guint         signalWatchId    = 0;
+#endif
+
+// ===========================================================================
+// Windows
+// ===========================================================================
+#ifdef _WIN32
 
 // ---------------------------------------------------------------------------
 // DPI awareness
@@ -137,3 +158,237 @@ cleanup:
     CloseHandle(hMutex);
     return 0;
 }
+
+#endif // _WIN32
+
+// ===========================================================================
+// Linux
+// ===========================================================================
+#ifdef __linux__
+
+// ---------------------------------------------------------------------------
+// Inotify callback — config file changed
+// ---------------------------------------------------------------------------
+
+static gboolean onConfigChanged(GIOChannel* source, GIOCondition condition,
+                                gpointer data) { // NOLINT(*-function-cognitive-complexity)
+    (void)source;
+    (void)data;
+    if (!(condition & G_IO_IN)) {
+        return G_SOURCE_CONTINUE;
+    }
+
+    // Drain all pending inotify events
+    char buf[256];
+    while (read(inotifyFd, buf, sizeof(buf)) > 0) {
+    }
+
+    guint64 now = g_get_monotonic_time() / 1000;
+    if (now - lastConfigLoad > CONFIG_RELOAD_DEBOUNCE_MS) {
+        loadConfig();
+        applyPowerState();
+        updateTray(0);
+        lastConfigLoad = now;
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
+// GtkMenu callbacks for AppIndicator
+// ---------------------------------------------------------------------------
+
+static void onToggleMode(GtkMenuItem* item,
+                         gpointer     userData) { // NOLINT(*-function-cognitive-complexity)
+    (void)item;
+    (void)userData;
+    globalMode = globalMode == MODE_STAY_AWAKE ? MODE_AUTO_OFF : MODE_STAY_AWAKE;
+    applyPowerState();
+    saveConfig();
+    updateTray(0);
+}
+
+static void onMonitorOff(GtkMenuItem* item,
+                         gpointer     userData) { // NOLINT(*-function-cognitive-complexity)
+    (void)item;
+    (void)userData;
+    turnOffMonitor();
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup on exit
+// ---------------------------------------------------------------------------
+
+static void cleanup(void) {
+    stopIdlePolling();
+
+    if (idleProxy) {
+        g_object_unref(idleProxy);
+        idleProxy = NULL;
+    }
+
+    stopInhibit();
+
+    if (indicator) {
+        g_object_unref(indicator);
+        indicator = NULL;
+    }
+
+    if (inotifyFd >= 0) {
+        if (inotifyWatchFd >= 0) {
+            inotify_rm_watch(inotifyFd, inotifyWatchFd);
+        }
+        close(inotifyFd);
+        inotifyFd = -1;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Single instance via flock
+// ---------------------------------------------------------------------------
+
+static int acquireLock(void) {
+    int lockFd = open("/tmp/stay-awake.pid", O_CREAT | O_RDWR, 0644);
+    if (lockFd < 0) {
+        return -1;
+    }
+    if (flock(lockFd, LOCK_EX | LOCK_NB) != 0) {
+        if (errno == EWOULDBLOCK) {
+            // Another instance is running — read its PID and signal it
+            char buf[32] = {0};
+            if (read(lockFd, buf, sizeof(buf) - 1) > 0) {
+                char* endPtr = NULL;
+                long  oldPid = strtol(buf, &endPtr, 10);
+                if (oldPid > 0 && endPtr != buf) {
+                    kill((pid_t)oldPid, SIGTERM);
+                    usleep(RESTART_DELAY_MS * 1000);
+                }
+            }
+            // Try again
+            if (flock(lockFd, LOCK_EX | LOCK_NB) != 0) {
+                close(lockFd);
+                return -1;
+            }
+        } else {
+            close(lockFd);
+            return -1;
+        }
+    }
+
+    // Write our PID
+    ftruncate(lockFd, 0);
+    char pidStr[32];
+    snprintf(pidStr, sizeof(pidStr), "%d", getpid());
+    write(lockFd, pidStr, strlen(pidStr));
+
+    return lockFd; // keep open to hold the lock
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
+    (void)argc;
+    (void)argv;
+
+    // Single instance check
+    int lockFd = acquireLock();
+    if (lockFd < 0) {
+        return 1;
+    }
+
+    initConfigPath();
+    loadConfig();
+    updateAutostartIfNeeded();
+
+    // Resolve icon directory from executable path
+    ssize_t exeLen = readlink("/proc/self/exe", iconDir, sizeof(iconDir) - 1);
+    if (exeLen > 0) {
+        iconDir[exeLen] = '\0';
+        char* lastSlash = strrchr(iconDir, '/');
+        if (lastSlash) {
+            *lastSlash = '\0';
+        }
+    } else {
+        snprintf(iconDir, sizeof(iconDir), ".");
+    }
+
+    // Detect dark mode and switch to light icon set if needed
+    {
+        GSettings* settings = g_settings_new("org.gnome.desktop.interface");
+        if (settings) {
+            gchar* colorScheme = g_settings_get_string(settings, "color-scheme");
+            if (colorScheme && g_strcmp0(colorScheme, "prefer-dark") != 0) {
+                // Light mode: use light/ subdirectory with dark outlines
+                char lightDir[600];
+                snprintf(lightDir, sizeof(lightDir), "%s/light", iconDir);
+                snprintf(iconDir, sizeof(iconDir), "%s", lightDir);
+            }
+            g_free(colorScheme);
+            g_object_unref(settings);
+        }
+    }
+
+    gtk_init(&argc, &argv);
+
+    // --- Tray icon with context menu ---
+    GtkWidget* trayMenu = gtk_menu_new();
+
+    GtkWidget* toggleItem =
+        gtk_menu_item_new_with_label(globalMode == MODE_STAY_AWAKE ? "Switch to Auto-Off" : "Switch to StayAwake");
+    g_signal_connect(toggleItem, "activate", G_CALLBACK(onToggleMode), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), toggleItem);
+
+    GtkWidget* monitorOffItem = gtk_menu_item_new_with_label("Turn Off Monitor");
+    g_signal_connect(monitorOffItem, "activate", G_CALLBACK(onMonitorOff), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), monitorOffItem);
+
+    GtkWidget* separator = gtk_separator_menu_item_new();
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), separator);
+
+    GtkWidget* exitItem = gtk_menu_item_new_with_label("Exit");
+    g_signal_connect(exitItem, "activate", G_CALLBACK(gtk_main_quit), NULL);
+    gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), exitItem);
+    gtk_widget_show_all(trayMenu);
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    indicator =
+        app_indicator_new_with_path("stay-awake", "dialog-warning", APP_INDICATOR_CATEGORY_APPLICATION_STATUS, iconDir);
+#pragma GCC diagnostic pop
+    app_indicator_set_status(indicator, APP_INDICATOR_STATUS_ACTIVE);
+    app_indicator_set_menu(APP_INDICATOR(indicator), GTK_MENU(trayMenu));
+    app_indicator_set_title(indicator, "StayAwake");
+
+    const char* iconName = (globalMode == MODE_STAY_AWAKE) ? "awake" : "auto_off_000";
+    app_indicator_set_icon_full(indicator, iconName, "StayAwake");
+    updateTooltip();
+
+    // --- Config file watching (inotify) ---
+    inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+    if (inotifyFd >= 0) {
+        inotifyWatchFd = inotify_add_watch(inotifyFd, configDir, IN_MODIFY);
+        if (inotifyWatchFd >= 0) {
+            GIOChannel* channel = g_io_channel_unix_new(inotifyFd);
+            g_io_add_watch(channel, G_IO_IN, onConfigChanged, NULL);
+            g_io_channel_unref(channel);
+        } else {
+            close(inotifyFd);
+            inotifyFd = -1;
+        }
+    }
+
+    // --- Power management ---
+    applyPowerState();
+
+    // Handle SIGTERM for graceful shutdown (single-instance restart)
+    signalWatchId = g_unix_signal_add(SIGTERM, (GSourceFunc)gtk_main_quit, NULL);
+
+    gtk_main();
+
+    cleanup();
+    close(lockFd);
+    return 0;
+}
+
+#endif // __linux__

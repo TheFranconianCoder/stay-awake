@@ -1,7 +1,11 @@
 #include "tray.h"
 
 #include <stdio.h>
-#include <string.h>
+
+// ===========================================================================
+// Windows — GDI dynamic icon rendering
+// ===========================================================================
+#ifdef _WIN32
 
 // Colors used exclusively for icon rendering
 static const COLORREF S_COL_RED  = RGB(231, 76, 60);
@@ -217,3 +221,61 @@ void updateTooltip(void) {
     notifyData.uFlags |= NIF_TIP;
     Shell_NotifyIconW(NIM_MODIFY, &notifyData);
 }
+
+#endif // _WIN32
+
+// ===========================================================================
+// Linux — AppIndicator with context menu
+// ===========================================================================
+#ifdef __linux__
+
+void updateTray(const int idle) {
+    static int lastFillPct = -1;
+
+    if (globalMode == MODE_STAY_AWAKE) {
+        if (lastFillPct != -2) {
+            app_indicator_set_icon_full(indicator, "awake", "StayAwake");
+            lastFillPct = -2;
+        }
+        updateTooltip();
+        return;
+    }
+
+    // Auto-off: calculate fill percentage in 10% steps
+    int fillPct = 0;
+    if (idleLimit > 0 && idle > 0) {
+        fillPct = idle * 100 / idleLimit;
+        if (fillPct > 100) {
+            fillPct = 100;
+        }
+        // Snap to nearest 10%
+        fillPct = (fillPct + 5) / 10 * 10;
+        if (fillPct > 100) {
+            fillPct = 100;
+        }
+    }
+
+    if (fillPct != lastFillPct) {
+        char iconName[32];
+        snprintf(iconName, sizeof(iconName), "auto_off_%03d", fillPct);
+        app_indicator_set_icon_full(indicator, iconName, "StayAwake");
+        lastFillPct = fillPct;
+    }
+    updateTooltip();
+}
+
+void updateTooltip(void) {
+    char tooltip[128];
+
+    if (globalMode == MODE_STAY_AWAKE) {
+        snprintf(tooltip, sizeof(tooltip), "StayAwake v%d.%d.%d: Always on", APP_VERSION_MAJOR, APP_VERSION_MINOR,
+                 APP_VERSION_PATCH);
+    } else {
+        snprintf(tooltip, sizeof(tooltip), "StayAwake v%d.%d.%d: Auto-off (%d sec)", APP_VERSION_MAJOR,
+                 APP_VERSION_MINOR, APP_VERSION_PATCH, idleLimit);
+    }
+
+    app_indicator_set_title(indicator, tooltip);
+}
+
+#endif // __linux__

@@ -1,10 +1,15 @@
 #include "config.h"
 
+#include "app_state.h"
+
+// ===========================================================================
+// Windows
+// ===========================================================================
+#ifdef _WIN32
+
 #include <shlobj.h>
 
 #include <stdio.h>
-
-#include "app_state.h"
 
 // ---------------------------------------------------------------------------
 // Config path
@@ -92,3 +97,155 @@ void updateAutostartIfNeeded(void) {
         RegCloseKey(hKey);
     }
 }
+
+#endif // _WIN32
+
+// ===========================================================================
+// Linux
+// ===========================================================================
+#ifdef __linux__
+
+// ---------------------------------------------------------------------------
+// Config path
+// ---------------------------------------------------------------------------
+
+void initConfigPath(void) {
+    const char* xdgConfig = getenv("XDG_CONFIG_HOME");
+    if (!xdgConfig || xdgConfig[0] == '\0') {
+        const char* home = getenv("HOME");
+        if (home) {
+            snprintf(configDir, sizeof(configDir), "%s/.config/stay-awake", home);
+        } else {
+            snprintf(configDir, sizeof(configDir), "/tmp/stay-awake");
+        }
+    } else {
+        snprintf(configDir, sizeof(configDir), "%s/stay-awake", xdgConfig);
+    }
+
+    // Create directory
+    g_mkdir_with_parents(configDir, 0755);
+
+    snprintf(configPath, sizeof(configPath), "%s/stay_awake.conf", configDir);
+}
+
+// ---------------------------------------------------------------------------
+// Persist / restore
+// ---------------------------------------------------------------------------
+
+void saveConfig(void) {
+    char tempPath[512];
+    snprintf(tempPath, sizeof(tempPath), "%s.tmp", configPath);
+
+    FILE* file = fopen(tempPath, "w");
+    if (file) {
+        fprintf(file, "%d %d", (int)globalMode, idleLimit);
+        fclose(file);
+
+        if (rename(tempPath, configPath) != 0) {
+            // Fallback: direct write
+            FILE* direct = fopen(configPath, "w");
+            if (direct) {
+                fprintf(direct, "%d %d", (int)globalMode, idleLimit);
+                fclose(direct);
+            }
+            unlink(tempPath);
+        }
+    }
+}
+
+void loadConfig(void) {
+    FILE* file = fopen(configPath, "r");
+    if (file) {
+        int  tempLimit = 0;
+        int  tempMode  = 0;
+        char line[64]  = {0};
+
+        if (fgets(line, sizeof(line), file)) {
+            if (sscanf(line, "%d %d", &tempMode, &tempLimit) == 2) {
+                if (tempLimit >= 10 && tempLimit <= 86400) {
+                    idleLimit = tempLimit;
+                }
+                if (tempMode >= 0 && tempMode < MODE_COUNT) {
+                    globalMode = (AppMode)tempMode;
+                }
+            }
+        }
+        fclose(file);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Autostart (XDG .desktop file)
+// ---------------------------------------------------------------------------
+
+void updateAutostartIfNeeded(void) {
+    const char* home = getenv("HOME");
+    if (!home) {
+        return;
+    }
+
+    char autostartDir[512];
+    snprintf(autostartDir, sizeof(autostartDir), "%s/.config/autostart", home);
+
+    // Ensure autostart directory exists
+    g_mkdir_with_parents(autostartDir, 0755);
+
+    char desktopPath[600];
+    snprintf(desktopPath, sizeof(desktopPath), "%s/stay-awake.desktop", autostartDir);
+
+    // Check if file already exists and matches
+    FILE* existing = fopen(desktopPath, "r");
+    if (existing) {
+        char line[512];
+        int  found = 0;
+        while (fgets(line, sizeof(line), existing)) {
+            if (strncmp(line, "Exec=", 5) == 0) {
+                // Trim newline
+                size_t len = strlen(line);
+                if (len > 0 && line[len - 1] == '\n') {
+                    line[len - 1] = '\0';
+                }
+                // Get current executable path
+                char    selfPath[512];
+                ssize_t selfLen = readlink("/proc/self/exe", selfPath, sizeof(selfPath) - 1);
+                if (selfLen > 0) {
+                    selfPath[selfLen] = '\0';
+                    if (strcmp(line + 5, selfPath) == 0) {
+                        found = 1;
+                    }
+                }
+                break;
+            }
+        }
+        fclose(existing);
+        if (found) {
+            return; // Already correct
+        }
+    }
+
+    // Get current executable path
+    char    selfPath[512];
+    ssize_t selfLen = readlink("/proc/self/exe", selfPath, sizeof(selfPath) - 1);
+    if (selfLen <= 0) {
+        return;
+    }
+    selfPath[selfLen] = '\0';
+
+    // Write .desktop file
+    FILE* file = fopen(desktopPath, "w");
+    if (file) {
+        fprintf(file,
+                "[Desktop Entry]\n"
+                "Type=Application\n"
+                "Name=StayAwake\n"
+                "Comment=Prevent system sleep\n"
+                "Exec=%s\n"
+                "Icon=dialog-warning\n"
+                "Terminal=false\n"
+                "X-GNOME-Autostart-enabled=true\n",
+                selfPath);
+        fclose(file);
+    }
+}
+
+#endif // __linux__

@@ -3,9 +3,10 @@
 #include "config.h"
 #include "tray.h"
 
-// ---------------------------------------------------------------------------
-// Power state
-// ---------------------------------------------------------------------------
+// ===========================================================================
+// Windows
+// ===========================================================================
+#ifdef _WIN32
 
 static BOOL monitorIsOff = FALSE;
 
@@ -101,3 +102,194 @@ LRESULT CALLBACK wndProc(HWND hwnd, const UINT msg, const WPARAM wParam,
     }
     return 0;
 }
+
+#endif // _WIN32
+
+// ===========================================================================
+// Linux
+// ===========================================================================
+#ifdef __linux__
+
+static gboolean monitorIsOff  = FALSE;
+static guint32  inhibitCookie = 0;
+
+// ---------------------------------------------------------------------------
+// Inhibit display blanking via GNOME Session Manager D-Bus
+// ---------------------------------------------------------------------------
+
+static void startInhibit(void) {
+    if (inhibitCookie > 0) {
+        return; // already inhibiting
+    }
+
+    GError*     error = NULL;
+    GDBusProxy* proxy =
+        g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, "org.gnome.SessionManager",
+                                      "/org/gnome/SessionManager", "org.gnome.SessionManager", NULL, &error);
+    if (!proxy) {
+        if (error) {
+            g_error_free(error);
+        }
+        return;
+    }
+
+    // INHIBIT_IDLE = 8 — prevents screen blanking on GNOME
+    GVariant* result =
+        g_dbus_proxy_call_sync(proxy, "Inhibit", g_variant_new("(susu)", "StayAwake", 0, "Preventing display sleep", 8),
+                               G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+    if (result) {
+        g_variant_get(result, "(u)", &inhibitCookie);
+        g_variant_unref(result);
+    }
+    if (error) {
+        g_error_free(error);
+    }
+    g_object_unref(proxy);
+}
+
+void stopInhibit(void) {
+    if (inhibitCookie == 0) {
+        return;
+    }
+
+    GError*     error = NULL;
+    GDBusProxy* proxy =
+        g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, "org.gnome.SessionManager",
+                                      "/org/gnome/SessionManager", "org.gnome.SessionManager", NULL, &error);
+    if (proxy) {
+        g_dbus_proxy_call_sync(proxy, "Uninhibit", g_variant_new("(u)", inhibitCookie), G_DBUS_CALL_FLAGS_NONE, -1,
+                               NULL, &error);
+        g_object_unref(proxy);
+    }
+    if (error) {
+        g_error_free(error);
+    }
+    inhibitCookie = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Idle time via Mutter D-Bus (proxy created once, reused)
+// ---------------------------------------------------------------------------
+
+static void ensureIdleProxy(void) {
+    if (idleProxy) {
+        return;
+    }
+    GError* error = NULL;
+    idleProxy     = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+                                                  "org.gnome.Mutter.IdleMonitor", "/org/gnome/Mutter/IdleMonitor/Core",
+                                                  "org.gnome.Mutter.IdleMonitor", NULL, &error);
+    if (!idleProxy) {
+        if (error) {
+            g_error_free(error);
+        }
+    }
+}
+
+static guint64 queryIdleTimeMs(void) {
+    ensureIdleProxy();
+    if (!idleProxy) {
+        return 0;
+    }
+
+    GError*   error  = NULL;
+    GVariant* result = g_dbus_proxy_call_sync(idleProxy, "GetIdletime", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+    guint64   idleMs = 0;
+    if (result) {
+        GVariant* val = g_variant_get_child_value(result, 0);
+        idleMs        = g_variant_get_uint64(val);
+        g_variant_unref(val);
+        g_variant_unref(result);
+    }
+    if (error) {
+        g_error_free(error);
+        // Proxy may be stale — reset it so next call recreates
+        g_object_unref(idleProxy);
+        idleProxy = NULL;
+    }
+    return idleMs;
+}
+
+// ---------------------------------------------------------------------------
+// Turn off monitor via D-Bus (works on both X11 and Wayland)
+// ---------------------------------------------------------------------------
+
+void turnOffMonitor(void) {
+    GError*     error = NULL;
+    GDBusProxy* proxy =
+        g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, "org.gnome.ScreenSaver",
+                                      "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver", NULL, &error);
+    if (proxy) {
+        g_dbus_proxy_call_sync(proxy, "SetActive", g_variant_new("(b)", TRUE), G_DBUS_CALL_FLAGS_NONE, -1, NULL,
+                               &error);
+        g_object_unref(proxy);
+    }
+    if (error) {
+        g_error_free(error);
+        // Fallback to xset for X11 sessions
+        error = NULL;
+        g_spawn_command_line_async("xset dpms force off", &error);
+        if (error) {
+            g_error_free(error);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Idle poll timer callback
+// ---------------------------------------------------------------------------
+
+static gboolean onIdlePoll(gpointer data) {
+    (void)data;
+
+    if (globalMode != MODE_AUTO_OFF) {
+        return G_SOURCE_REMOVE;
+    }
+
+    guint64 idleMs = queryIdleTimeMs();
+    int     idle   = (int)(idleMs / MS_PER_SEC);
+
+    if (idle >= 0) {
+        updateTray(idle);
+        if (idle >= idleLimit && !monitorIsOff) {
+            turnOffMonitor();
+            monitorIsOff = TRUE;
+        } else if (idle < idleLimit) {
+            monitorIsOff = FALSE;
+        }
+    }
+    return G_SOURCE_CONTINUE;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+void stopIdlePolling(void) {
+    if (idlePollSourceId > 0) {
+        g_source_remove(idlePollSourceId);
+        idlePollSourceId = 0;
+    }
+}
+
+void startIdlePolling(void) {
+    stopIdlePolling();
+    if (globalMode == MODE_AUTO_OFF) {
+        idlePollSourceId = g_timeout_add(LINUX_IDLE_POLL_MS, onIdlePoll, NULL);
+    }
+}
+
+void applyPowerState(void) {
+    monitorIsOff = FALSE;
+
+    if (globalMode == MODE_STAY_AWAKE) {
+        stopInhibit();
+        startInhibit(); // re-acquire the inhibitor lock
+        stopIdlePolling();
+    } else {
+        stopInhibit();
+        startIdlePolling();
+    }
+}
+
+#endif // __linux__

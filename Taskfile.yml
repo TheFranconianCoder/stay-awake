@@ -1,60 +1,80 @@
 version: "3"
 
+includes:
+  linux: Taskfile.linux.yml
+  windows: Taskfile.windows.yml
+
 tasks:
 
   check:
+    desc: Format + lint (OS-dispatched)
     cmds:
-      - mise x -- clang-format -i src/main.c src/config.c src/tray.c src/power.c src/app_state.h src/config.h src/power.h src/tray.h
-      - mise x -- clang-tidy src/main.c src/config.c src/tray.c src/power.c
-    sources:
-      - src/*
-      - .clang-*
+      - cmd: task linux:check
+        platforms: [linux]
+      - cmd: task windows:check
+        platforms: [windows]
 
   build:
-    desc: Build StayAwake
-    deps: [ check ]
-    cmd: mise x -- zig build
-    sources:
-      - src/*
-    generates:
-      - ./zig-out/bin/StayAwake-windows-x86_64.exe
+    desc: Build StayAwake (OS-dispatched)
+    cmds:
+      - cmd: task linux:build
+        platforms: [linux]
+      - cmd: task windows:build
+        platforms: [windows]
 
   run:
-    desc: Run StayAwake
-    deps: [ build ]
-    cmd: cmd /c start "" "./zig-out/bin/StayAwake-windows-x86_64.exe"
+    desc: Run StayAwake (OS-dispatched)
+    cmds:
+      - cmd: task linux:run
+        platforms: [linux]
+      - cmd: task windows:run
+        platforms: [windows]
+
+  install-deps:
+    desc: Install platform build dependencies
+    cmds:
+      - cmd: task linux:install-deps
+        platforms: [linux]
+
+  build-linux:
+    desc: Build StayAwake for Linux (cross-compile from any OS)
+    cmds:
+      - mise x -- zig build
+    sources:
+      - src/*
+
+  build-windows:
+    desc: Build StayAwake for Windows (cross-compile from any OS)
+    cmds:
+      - |
+        if [ -f "./zig-out/bin/StayAwake-windows-x86_64.exe" ]; then
+          mv ./zig-out/bin/StayAwake-windows-x86_64.exe ./zig-out/bin/StayAwake-windows-x86_64.exe~
+        fi
+      - mise x -- zig build -Dtarget=x86_64-windows-gnu
+    sources:
+      - src/*
 
   release:
-    desc: "Create new release and publish on GitHub (Usage: task release VERSION=1.2.0)"
-    summary: |
-      Prepares the release by updating version headers, builds the binary, and publishes it to GitHub.
-      Requirements: OpenCode, Zig, and GitHub CLI (gh) must be installed.
+    desc: "Create new release and publish on GitHub (Usage: task release VERSION=1.2.5)"
     cmds:
-      # 1. Generate release notes
       - opencode run --command generate-release-notes
-
-      # 2. Update version strings
       - opencode run --command bump-version -- {{.VERSION}}
-
-      # 3. Automated Git Workflow
-      - git add src/app_state.h resource.rc
+      - git add src/app_state.h build.zig.zon resource.rc
       - 'git commit -m "chore: prepare release v{{.VERSION}}"'
       - git push
-      - echo "✅ Changes committed and pushed to origin."
-
-      # 4. Build and publish
-      - mise x -- zig build
+      - task: build-linux
+      - task: build-windows
       - |
         mise x -- gh release create "v{{.VERSION}}" \
+          ./zig-out/bin/StayAwake-linux-x86_64 \
           ./zig-out/bin/StayAwake-windows-x86_64.exe \
           --title "v{{.VERSION}}: $(cat release_title.txt)" \
           --notes-file release_notes.md
       - rm release_title.txt release_notes.md
-      - echo "🚀 Release v{{.VERSION}} successfully published!"
     preconditions:
       - sh: 'test -n "{{.VERSION}}"'
-        msg: "Error: VERSION variable is missing. Example: task release VERSION=1.2.0"
+        msg: "Error: VERSION variable is missing."
       - sh: "mise x -- gh auth status"
-        msg: "Error: You must be logged into the GitHub CLI (gh auth login)."
+        msg: "Error: You must be logged into the GitHub CLI."
       - sh: "git diff --exit-code"
-        msg: "Error: You have uncommitted changes. Please stash or commit them first."
+        msg: "Error: You have uncommitted changes."

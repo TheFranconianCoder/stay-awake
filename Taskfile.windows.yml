@@ -1,0 +1,28 @@
+version: "3"
+
+tasks:
+
+  check:
+    cmds:
+      - mise x -- clang-format -i src/main.c src/config.c src/tray.c src/power.c src/app_state.h src/config.h src/power.h src/tray.h
+      - mise x -- clang-tidy src/main.c src/config.c src/tray.c src/power.c
+    sources:
+      - src/*
+      - .clang-*
+
+  build:
+    desc: Build StayAwake for Windows
+    deps: [ check ]
+    cmds:
+      - |
+        if [ -f "./zig-out/bin/StayAwake-windows-x86_64.exe" ]; then
+          mv ./zig-out/bin/StayAwake-windows-x86_64.exe ./zig-out/bin/StayAwake-windows-x86_64.exe~
+        fi
+      - mise x -- zig build
+    sources:
+      - src/*
+
+  run:
+    desc: Run StayAwake on Windows
+    deps: [ build ]
+    cmd: cmd /c start "" "./zig-out/bin/StayAwake-windows-x86_64.exe"
