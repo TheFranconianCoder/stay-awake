@@ -113,6 +113,48 @@ LRESULT CALLBACK wndProc(HWND hwnd, const UINT msg, const WPARAM wParam,
 static gboolean monitorIsOff  = FALSE;
 static guint32  inhibitCookie = 0;
 
+static GDBusProxy* sessionProxy     = NULL; // org.gnome.SessionManager
+static GDBusProxy* screensaverProxy = NULL; // org.gnome.ScreenSaver
+
+// ---------------------------------------------------------------------------
+// Cached D-Bus proxies (created lazily, reset on error)
+// ---------------------------------------------------------------------------
+
+static GDBusProxy* createProxy(const char* name, const char* path, const char* iface) {
+    GError*     error = NULL;
+    GDBusProxy* proxy = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_DO_NOT_LOAD_PROPERTIES,
+                                                      NULL, name, path, iface, NULL, &error);
+    if (!proxy) {
+        if (error) {
+            g_error_free(error);
+        }
+        return NULL;
+    }
+    g_dbus_proxy_set_default_timeout(proxy, DBUS_CALL_TIMEOUT_MS);
+    return proxy;
+}
+
+static void resetProxy(GDBusProxy** proxy) {
+    if (*proxy) {
+        g_object_unref(*proxy);
+        *proxy = NULL;
+    }
+}
+
+static GDBusProxy* getSessionProxy(void) {
+    if (!sessionProxy) {
+        sessionProxy = createProxy("org.gnome.SessionManager", "/org/gnome/SessionManager", "org.gnome.SessionManager");
+    }
+    return sessionProxy;
+}
+
+static GDBusProxy* getScreensaverProxy(void) {
+    if (!screensaverProxy) {
+        screensaverProxy = createProxy("org.gnome.ScreenSaver", "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver");
+    }
+    return screensaverProxy;
+}
+
 // ---------------------------------------------------------------------------
 // Inhibit display blanking via GNOME Session Manager D-Bus
 // ---------------------------------------------------------------------------
@@ -122,18 +164,13 @@ static void startInhibit(void) {
         return; // already inhibiting
     }
 
-    GError*     error = NULL;
-    GDBusProxy* proxy =
-        g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, "org.gnome.SessionManager",
-                                      "/org/gnome/SessionManager", "org.gnome.SessionManager", NULL, &error);
+    GDBusProxy* proxy = getSessionProxy();
     if (!proxy) {
-        if (error) {
-            g_error_free(error);
-        }
         return;
     }
 
     // INHIBIT_IDLE = 8 — prevents screen blanking on GNOME
+    GError*   error = NULL;
     GVariant* result =
         g_dbus_proxy_call_sync(proxy, "Inhibit", g_variant_new("(susu)", "StayAwake", 0, "Preventing display sleep", 8),
                                G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
@@ -143,8 +180,8 @@ static void startInhibit(void) {
     }
     if (error) {
         g_error_free(error);
+        resetProxy(&sessionProxy); // proxy may be stale — recreate on next call
     }
-    g_object_unref(proxy);
 }
 
 void stopInhibit(void) {
@@ -152,17 +189,15 @@ void stopInhibit(void) {
         return;
     }
 
-    GError*     error = NULL;
-    GDBusProxy* proxy =
-        g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, "org.gnome.SessionManager",
-                                      "/org/gnome/SessionManager", "org.gnome.SessionManager", NULL, &error);
+    GDBusProxy* proxy = getSessionProxy();
     if (proxy) {
+        GError* error = NULL;
         g_dbus_proxy_call_sync(proxy, "Uninhibit", g_variant_new("(u)", inhibitCookie), G_DBUS_CALL_FLAGS_NONE, -1,
                                NULL, &error);
-        g_object_unref(proxy);
-    }
-    if (error) {
-        g_error_free(error);
+        if (error) {
+            g_error_free(error);
+            resetProxy(&sessionProxy);
+        }
     }
     inhibitCookie = 0;
 }
@@ -175,15 +210,8 @@ static void ensureIdleProxy(void) {
     if (idleProxy) {
         return;
     }
-    GError* error = NULL;
-    idleProxy     = g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
-                                                  "org.gnome.Mutter.IdleMonitor", "/org/gnome/Mutter/IdleMonitor/Core",
-                                                  "org.gnome.Mutter.IdleMonitor", NULL, &error);
-    if (!idleProxy) {
-        if (error) {
-            g_error_free(error);
-        }
-    }
+    idleProxy = createProxy("org.gnome.Mutter.IdleMonitor", "/org/gnome/Mutter/IdleMonitor/Core",
+                            "org.gnome.Mutter.IdleMonitor");
 }
 
 static guint64 queryIdleTimeMs(void) {
@@ -204,8 +232,7 @@ static guint64 queryIdleTimeMs(void) {
     if (error) {
         g_error_free(error);
         // Proxy may be stale — reset it so next call recreates
-        g_object_unref(idleProxy);
-        idleProxy = NULL;
+        resetProxy(&idleProxy);
     }
     return idleMs;
 }
@@ -215,22 +242,23 @@ static guint64 queryIdleTimeMs(void) {
 // ---------------------------------------------------------------------------
 
 void turnOffMonitor(void) {
-    GError*     error = NULL;
-    GDBusProxy* proxy =
-        g_dbus_proxy_new_for_bus_sync(G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL, "org.gnome.ScreenSaver",
-                                      "/org/gnome/ScreenSaver", "org.gnome.ScreenSaver", NULL, &error);
+    GDBusProxy* proxy = getScreensaverProxy();
+
+    GError* error = NULL;
     if (proxy) {
         g_dbus_proxy_call_sync(proxy, "SetActive", g_variant_new("(b)", TRUE), G_DBUS_CALL_FLAGS_NONE, -1, NULL,
                                &error);
-        g_object_unref(proxy);
     }
-    if (error) {
-        g_error_free(error);
-        // Fallback to xset for X11 sessions
-        error = NULL;
-        g_spawn_command_line_async("xset dpms force off", &error);
+    if (!proxy || error) {
         if (error) {
             g_error_free(error);
+        }
+        resetProxy(&screensaverProxy);
+        // Fallback to xset for X11 sessions
+        GError* spawnError = NULL;
+        g_spawn_command_line_async("xset dpms force off", &spawnError);
+        if (spawnError) {
+            g_error_free(spawnError);
         }
     }
 }
@@ -249,14 +277,12 @@ static gboolean onIdlePoll(gpointer data) {
     guint64 idleMs = queryIdleTimeMs();
     int     idle   = (int)(idleMs / MS_PER_SEC);
 
-    if (idle >= 0) {
-        updateTray(idle);
-        if (idle >= idleLimit && !monitorIsOff) {
-            turnOffMonitor();
-            monitorIsOff = TRUE;
-        } else if (idle < idleLimit) {
-            monitorIsOff = FALSE;
-        }
+    updateTray(idle);
+    if (idle >= idleLimit && !monitorIsOff) {
+        turnOffMonitor();
+        monitorIsOff = TRUE;
+    } else if (idle < idleLimit) {
+        monitorIsOff = FALSE;
     }
     return G_SOURCE_CONTINUE;
 }

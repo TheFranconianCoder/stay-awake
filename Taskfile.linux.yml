@@ -5,7 +5,7 @@ tasks:
   check:
     cmds:
       - mise x -- clang-format -i src/main.c src/config.c src/tray.c src/power.c src/app_state.h src/config.h src/power.h src/tray.h
-      - mise x -- clang-tidy --header-filter='src/.*' src/main.c src/config.c src/tray.c src/power.c -- -std=c23 -D_GNU_SOURCE -Isrc $(pkg-config --cflags gtk+-3.0 ayatana-appindicator3-0.1 dbus-1)
+      - mise x -- clang-tidy --header-filter='src/.*' src/main.c src/config.c src/tray.c src/power.c -- -std=c23 -D_GNU_SOURCE -Isrc $(pkg-config --cflags gtk+-3.0 ayatana-appindicator3-0.1)
     sources:
       - src/*
       - .clang-*
@@ -25,4 +25,4 @@ tasks:
 
   install-deps:
     desc: Install Linux build dependencies
-    cmd: sudo apt install -y libgtk-3-dev libayatana-appindicator3-dev libdbus-1-dev
+    cmd: sudo apt install -y libgtk-3-dev libayatana-appindicator3-dev

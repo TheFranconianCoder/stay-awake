@@ -1,6 +1,7 @@
 #include "tray.h"
 
 #include <stdio.h>
+#include <string.h>
 
 // ===========================================================================
 // Windows — GDI dynamic icon rendering
@@ -232,6 +233,12 @@ void updateTooltip(void) {
 void updateTray(const int idle) {
     static int lastFillPct = -1;
 
+    // Keep the toggle menu label in sync with the current mode
+    if (toggleMenuItem) {
+        gtk_menu_item_set_label(toggleMenuItem,
+                                globalMode == MODE_STAY_AWAKE ? "Switch to Auto-Off" : "Switch to StayAwake");
+    }
+
     if (globalMode == MODE_STAY_AWAKE) {
         if (lastFillPct != -2) {
             app_indicator_set_icon_full(indicator, "awake", "StayAwake");
@@ -265,7 +272,8 @@ void updateTray(const int idle) {
 }
 
 void updateTooltip(void) {
-    char tooltip[128];
+    static char lastTooltip[128] = {0};
+    char        tooltip[128];
 
     if (globalMode == MODE_STAY_AWAKE) {
         snprintf(tooltip, sizeof(tooltip), "StayAwake v%d.%d.%d: Always on", APP_VERSION_MAJOR, APP_VERSION_MINOR,
@@ -275,6 +283,10 @@ void updateTooltip(void) {
                  APP_VERSION_MINOR, APP_VERSION_PATCH, idleLimit);
     }
 
+    if (strcmp(tooltip, lastTooltip) == 0) {
+        return; // unchanged — avoid redundant D-Bus property update
+    }
+    snprintf(lastTooltip, sizeof(lastTooltip), "%s", tooltip);
     app_indicator_set_title(indicator, tooltip);
 }
 

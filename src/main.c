@@ -23,9 +23,9 @@ char          configDir[512];
 char          iconDir[512];
 guint64       lastConfigLoad   = 0;
 guint         idlePollSourceId = 0;
-int           inotifyFd        = -1;
-int           inotifyWatchFd   = -1;
+GFileMonitor* configMonitor    = NULL;
 AppIndicator* indicator        = NULL;
+GtkMenuItem*  toggleMenuItem   = NULL;
 GDBusProxy*   idleProxy        = NULL;
 guint         signalWatchId    = 0;
 #endif
@@ -167,20 +167,26 @@ cleanup:
 #ifdef __linux__
 
 // ---------------------------------------------------------------------------
-// Inotify callback — config file changed
+// GFileMonitor callback — config file changed
 // ---------------------------------------------------------------------------
 
-static gboolean onConfigChanged(GIOChannel* source, GIOCondition condition,
-                                gpointer data) { // NOLINT(*-function-cognitive-complexity)
-    (void)source;
+static void onConfigChanged(GFileMonitor* monitor, GFile* file, GFile* otherFile, GFileMonitorEvent event,
+                            gpointer data) {
+    (void)monitor;
+    (void)otherFile;
     (void)data;
-    if (!(condition & G_IO_IN)) {
-        return G_SOURCE_CONTINUE;
+
+    if (event != G_FILE_MONITOR_EVENT_CHANGED && event != G_FILE_MONITOR_EVENT_CREATED &&
+        event != G_FILE_MONITOR_EVENT_MOVED_IN) {
+        return;
     }
 
-    // Drain all pending inotify events
-    char buf[256];
-    while (read(inotifyFd, buf, sizeof(buf)) > 0) {
+    // Only react to the config file itself
+    gchar*   baseName = g_file_get_basename(file);
+    gboolean isConfig = g_strcmp0(baseName, CONFIG_FILENAME) == 0;
+    g_free(baseName);
+    if (!isConfig) {
+        return;
     }
 
     guint64 now = g_get_monotonic_time() / 1000;
@@ -190,7 +196,6 @@ static gboolean onConfigChanged(GIOChannel* source, GIOCondition condition,
         updateTray(0);
         lastConfigLoad = now;
     }
-    return G_SOURCE_CONTINUE;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,6 +226,11 @@ static void onMonitorOff(GtkMenuItem* item,
 static void cleanup(void) {
     stopIdlePolling();
 
+    if (signalWatchId > 0) {
+        g_source_remove(signalWatchId);
+        signalWatchId = 0;
+    }
+
     if (idleProxy) {
         g_object_unref(idleProxy);
         idleProxy = NULL;
@@ -233,24 +243,52 @@ static void cleanup(void) {
         indicator = NULL;
     }
 
-    if (inotifyFd >= 0) {
-        if (inotifyWatchFd >= 0) {
-            inotify_rm_watch(inotifyFd, inotifyWatchFd);
-        }
-        close(inotifyFd);
-        inotifyFd = -1;
+    if (configMonitor) {
+        g_file_monitor_cancel(configMonitor);
+        g_object_unref(configMonitor);
+        configMonitor = NULL;
     }
+}
+
+// ---------------------------------------------------------------------------
+// SIGTERM handler (single-instance restart)
+// ---------------------------------------------------------------------------
+
+static gboolean onSigTerm(gpointer data) {
+    (void)data;
+    signalWatchId = 0; // source is destroyed after returning G_SOURCE_REMOVE
+    gtk_main_quit();
+    return G_SOURCE_REMOVE;
 }
 
 // ---------------------------------------------------------------------------
 // Single instance via flock
 // ---------------------------------------------------------------------------
 
+static void buildLockPath(char* lockPath, size_t size) {
+    const char* runtimeDir = getenv("XDG_RUNTIME_DIR");
+    if (runtimeDir && runtimeDir[0] != '\0') {
+        snprintf(lockPath, size, "%s/stay-awake.pid", runtimeDir);
+        return;
+    }
+    const char* home = getenv("HOME");
+    if (home && home[0] != '\0') {
+        snprintf(lockPath, size, "%s/.config/stay-awake.pid", home);
+        return;
+    }
+    snprintf(lockPath, size, "/tmp/stay-awake-%d.pid", (int)getuid());
+}
+
 static int acquireLock(void) {
-    int lockFd = open("/tmp/stay-awake.pid", O_CREAT | O_RDWR, 0644);
+    char lockPath[512];
+    buildLockPath(lockPath, sizeof(lockPath));
+
+    int lockFd = open(lockPath, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (lockFd < 0) {
         return -1;
     }
+    fchmod(lockFd, 0600);
+
     if (flock(lockFd, LOCK_EX | LOCK_NB) != 0) {
         if (errno == EWOULDBLOCK) {
             // Another instance is running — read its PID and signal it
@@ -260,7 +298,7 @@ static int acquireLock(void) {
                 long  oldPid = strtol(buf, &endPtr, 10);
                 if (oldPid > 0 && endPtr != buf) {
                     kill((pid_t)oldPid, SIGTERM);
-                    usleep(RESTART_DELAY_MS * 1000);
+                    g_usleep((gulong)RESTART_DELAY_MS * 1000);
                 }
             }
             // Try again
@@ -276,6 +314,7 @@ static int acquireLock(void) {
 
     // Write our PID
     ftruncate(lockFd, 0);
+    lseek(lockFd, 0, SEEK_SET);
     char pidStr[32];
     snprintf(pidStr, sizeof(pidStr), "%d", getpid());
     write(lockFd, pidStr, strlen(pidStr));
@@ -288,9 +327,6 @@ static int acquireLock(void) {
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
-    (void)argc;
-    (void)argv;
-
     // Single instance check
     int lockFd = acquireLock();
     if (lockFd < 0) {
@@ -315,9 +351,12 @@ int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
 
     // Detect dark mode and switch to light icon set if needed
     {
-        GSettings* settings = g_settings_new("org.gnome.desktop.interface");
-        if (settings) {
-            gchar* colorScheme = g_settings_get_string(settings, "color-scheme");
+        GSettingsSchemaSource* source = g_settings_schema_source_get_default();
+        GSettingsSchema*       schema =
+            source ? g_settings_schema_source_lookup(source, "org.gnome.desktop.interface", TRUE) : NULL;
+        if (schema) {
+            GSettings* settings    = g_settings_new("org.gnome.desktop.interface");
+            gchar*     colorScheme = g_settings_get_string(settings, "color-scheme");
             if (colorScheme && g_strcmp0(colorScheme, "prefer-dark") != 0) {
                 // Light mode: use light/ subdirectory with dark outlines
                 char lightDir[600];
@@ -326,6 +365,7 @@ int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
             }
             g_free(colorScheme);
             g_object_unref(settings);
+            g_settings_schema_unref(schema);
         }
     }
 
@@ -336,6 +376,7 @@ int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
 
     GtkWidget* toggleItem =
         gtk_menu_item_new_with_label(globalMode == MODE_STAY_AWAKE ? "Switch to Auto-Off" : "Switch to StayAwake");
+    toggleMenuItem = GTK_MENU_ITEM(toggleItem);
     g_signal_connect(toggleItem, "activate", G_CALLBACK(onToggleMode), NULL);
     gtk_menu_shell_append(GTK_MENU_SHELL(trayMenu), toggleItem);
 
@@ -364,17 +405,13 @@ int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
     app_indicator_set_icon_full(indicator, iconName, "StayAwake");
     updateTooltip();
 
-    // --- Config file watching (inotify) ---
-    inotifyFd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-    if (inotifyFd >= 0) {
-        inotifyWatchFd = inotify_add_watch(inotifyFd, configDir, IN_MODIFY);
-        if (inotifyWatchFd >= 0) {
-            GIOChannel* channel = g_io_channel_unix_new(inotifyFd);
-            g_io_add_watch(channel, G_IO_IN, onConfigChanged, NULL);
-            g_io_channel_unref(channel);
-        } else {
-            close(inotifyFd);
-            inotifyFd = -1;
+    // --- Config file watching (GFileMonitor) ---
+    {
+        GFile* configDirFile = g_file_new_for_path(configDir);
+        configMonitor        = g_file_monitor_directory(configDirFile, G_FILE_MONITOR_NONE, NULL, NULL);
+        g_object_unref(configDirFile);
+        if (configMonitor) {
+            g_signal_connect(configMonitor, "changed", G_CALLBACK(onConfigChanged), NULL);
         }
     }
 
@@ -382,7 +419,7 @@ int main(int argc, char* argv[]) { // NOLINT(*-function-cognitive-complexity)
     applyPowerState();
 
     // Handle SIGTERM for graceful shutdown (single-instance restart)
-    signalWatchId = g_unix_signal_add(SIGTERM, (GSourceFunc)gtk_main_quit, NULL);
+    signalWatchId = g_unix_signal_add(SIGTERM, onSigTerm, NULL);
 
     gtk_main();
 

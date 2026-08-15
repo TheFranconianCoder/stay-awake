@@ -80,7 +80,6 @@ pub fn build(b: *std.Build) void {
     if (isLinux) {
         exe.root_module.linkSystemLibrary("gtk+-3.0", .{});
         exe.root_module.linkSystemLibrary("ayatana-appindicator3-0.1", .{});
-        exe.root_module.linkSystemLibrary("dbus-1", .{});
 
         // Install icons next to the binary (dark mode = default, light mode = light/ subdir)
         const awake_icon = b.path("src/icons/awake.png");

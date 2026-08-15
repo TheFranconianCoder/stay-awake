@@ -17,8 +17,6 @@
 #include <gtk/gtk.h>
 #include <libayatana-appindicator/app-indicator.h>
 #include <sys/file.h>
-#include <sys/inotify.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #endif
 
@@ -38,11 +36,16 @@ enum {
     APP_VERSION_MINOR         = 2,
     APP_VERSION_PATCH         = 4,
     CONFIG_RELOAD_DEBOUNCE_MS = 250,
-    LINUX_IDLE_POLL_MS        = 1000
+    LINUX_IDLE_POLL_MS        = 1000,
+    DBUS_CALL_TIMEOUT_MS      = 1000
 };
 
 #ifdef _WIN32
 #define WM_TRAYICON (WM_USER + 1)
+#endif
+
+#ifdef __linux__
+#define CONFIG_FILENAME "stay_awake.conf"
 #endif
 
 // ---------------------------------------------------------------------------
@@ -71,9 +74,9 @@ extern char          configDir[512];
 extern char          iconDir[512];
 extern guint64       lastConfigLoad;
 extern guint         idlePollSourceId;
-extern int           inotifyFd;
-extern int           inotifyWatchFd;
+extern GFileMonitor* configMonitor;
 extern AppIndicator* indicator;
+extern GtkMenuItem*  toggleMenuItem;
 extern GDBusProxy*   idleProxy;
 extern guint         signalWatchId;
 #endif

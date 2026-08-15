@@ -27,5 +27,5 @@ C → Zig → Win32 (Windows) / GTK3 + GIO + AppIndicator (Linux) → Task/mise
 # Platform
 
 - **Windows:** Win32 API, GDI icons, system tray via Shell_NotifyIcon
-- **Linux:** GTK3, AppIndicator (libayatana-appindicator-glib), D-Bus (GNOME Session Manager, Mutter IdleMonitor, ScreenSaver), inotify
+- **Linux:** GTK3, AppIndicator (libayatana-appindicator-glib), D-Bus (GNOME Session Manager, Mutter IdleMonitor, ScreenSaver), GFileMonitor
 - **Cross-platform:** `#ifdef _WIN32` / `#ifdef __linux__` guards in shared source files

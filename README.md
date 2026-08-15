@@ -48,9 +48,9 @@ In **Auto-Off** mode, the application monitors user activity and once the idle t
 * **Idle Detection**: D-Bus calls to `org.gnome.Mutter.IdleMonitor.GetIdletime` (GNOME Wayland compatible).
 * **Monitor Off**: `org.gnome.ScreenSaver.SetActive(true)` D-Bus — blanks display without forced lock.
 * **Tray Icon**: `libayatana-appindicator3` with 12 static PNG icons (11 auto-off fill levels + 1 awake). Auto-detects dark/light mode for correct outline color.
-* **File Watching**: `inotify` for real-time config reload.
+* **File Watching**: `GFileMonitor` for real-time config reload.
 * **Autostart**: XDG `~/.config/autostart/stay-awake.desktop`.
-* **Single Instance**: `flock()` on `/tmp/stay-awake.pid`.
+* **Single Instance**: `flock()` on a pid file in `$XDG_RUNTIME_DIR`.
 
 ---
 
@@ -105,7 +105,7 @@ The project is built using the **Zig** toolchain.
 **Linux** (Ubuntu/Debian):
 
 ```bash
-sudo apt install libgtk-3-dev libayatana-appindicator3-dev libdbus-1-dev
+sudo apt install libgtk-3-dev libayatana-appindicator3-dev
 ```
 
 ### Build

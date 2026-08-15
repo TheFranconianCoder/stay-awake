@@ -125,7 +125,7 @@ void initConfigPath(void) {
     // Create directory
     g_mkdir_with_parents(configDir, 0755);
 
-    snprintf(configPath, sizeof(configPath), "%s/stay_awake.conf", configDir);
+    snprintf(configPath, sizeof(configPath), "%s/%s", configDir, CONFIG_FILENAME);
 }
 
 // ---------------------------------------------------------------------------
